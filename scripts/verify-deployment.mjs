@@ -25,6 +25,14 @@ assert(indexResponse.ok, `${indexUrl} returned HTTP ${indexResponse.status}`);
 const html = await indexResponse.text();
 const metaSha = /<meta name="portal-react:commit-sha" content="([^"]*)"/.exec(html)?.[1] ?? "";
 assert(metaSha === expectedSha, `index meta SHA ${metaSha || "missing"} did not match ${expectedSha}`);
+assert(
+  !html.includes('src="/assets/') && !html.includes('href="/assets/'),
+  "index.html contains root /assets references; expected /web_portal_v2/assets for path-based routing",
+);
+assert(
+  html.includes('src="/web_portal_v2/assets/') || html.includes('href="/web_portal_v2/assets/'),
+  "index.html does not contain /web_portal_v2/assets references",
+);
 
 console.log(`Deployment proof OK: ${normalizedUrl} serves ${expectedSha}`);
 

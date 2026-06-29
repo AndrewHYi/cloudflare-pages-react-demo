@@ -30,7 +30,11 @@ export function pagesPathnameForPortalPath(pathname) {
     return "/favicon.svg";
   }
 
-  return pathname;
+  if (pathname === "/web_portal_v2/version.json") {
+    return "/web_portal_v2/version.json";
+  }
+
+  return "/";
 }
 
 function requiredEnv(env, key) {

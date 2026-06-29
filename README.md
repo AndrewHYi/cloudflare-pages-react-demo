@@ -66,9 +66,9 @@ npm run verify:deployment -- \
 Making this GitHub repo private protects the source repository, not the
 Cloudflare Pages URLs.
 
-By default, `*.pages.dev` deployments are still publicly reachable. If preview
-or staging URLs need company-only access, put Cloudflare Access in front of the
-Pages project or route traffic through a protected worker/custom domain.
+By default, `*.pages.dev` deployments are still publicly reachable. For the
+official environment URLs, route traffic through the existing SeeClickFix
+hostname and `/web_portal_v2` Cloudflare Worker Routes.
 
 The PR preview workflow only deploys same-repository pull requests:
 
@@ -276,6 +276,8 @@ This proof checks these concrete requirements:
 - only `/web_portal_v2` and `/web_portal_v2/*` route to Pages;
 - path-routed builds emit browser-facing asset URLs under
   `/web_portal_v2/assets/*`;
+- portal app shell paths such as `/web_portal_v2/<portal-token>` fetch the
+  Pages root HTML while the browser URL remains unchanged;
 - the Worker routing code rewrites those asset requests to existing Pages files under
   `/assets/*`.
 
@@ -335,7 +337,8 @@ The official implementation path is in draft PR:
 
 The official repo should not use Andrew's personal Cloudflare account. It
 should use a company Cloudflare account tied to work SSO, with SRE owning
-account setup, API tokens, domains, and production environment protection.
+account setup, API tokens, Worker Routes, DNS routing, and production
+environment protection.
 
 ### 1. Create Company Cloudflare Projects
 
@@ -367,7 +370,7 @@ Minimum deploy permissions:
 - Account: Cloudflare Pages: Edit
 - Account: Account Settings: Read
 
-DNS/custom-domain setup should stay with SRE-owned credentials:
+DNS and Worker Route setup should stay with SRE-owned credentials:
 
 - Zone: DNS: Edit
 - Zone: Zone: Read
@@ -451,7 +454,7 @@ the current path shape:
 
 Non-production:
 
-- Use Cloudflare Pages branch aliases first:
+- Use Cloudflare Pages branch aliases as the artifact targets behind the Worker:
   - `https://staging.<project>.pages.dev`
   - `https://pr-<number>.<project>.pages.dev`
 - For same-host TEST, configure these Cloudflare Worker Routes:
@@ -461,8 +464,6 @@ Non-production:
   - `int.seeclickfix.com/web_portal_v2`
   - `int.seeclickfix.com/web_portal_v2/*`
 - Leave all other paths on the backend host.
-- If first-party PR preview hostnames are required, use a frontend-only
-  namespace such as `*.portal-react-preview.test.seeclickfix.com`.
 
 Production:
 
@@ -484,9 +485,9 @@ Verified same-host Worker Route requirements:
   `/`.
 - The Vite build must use `VITE_BASE_PATH=/web_portal_v2/` or equivalent so
   scripts and styles load from `/web_portal_v2/assets/*`.
-- Because Vite still writes files under `dist/assets/*`, the Worker routing code must
-  rewrite `/web_portal_v2/assets/*` to the Pages origin `/assets/*`, or the
-  build must copy assets under `dist/web_portal_v2/assets/*`.
+- Worker routing code must fetch Pages `/` for portal app shell paths.
+- Because Vite still writes files under `dist/assets/*`, Worker routing code must
+  rewrite `/web_portal_v2/assets/*` to the Pages origin `/assets/*`.
 - This repo verifies the rewrite behavior with `npm run verify:path-routing`.
 - This is local proof of build output and Worker routing logic. Live same-host
   proof requires SRE to install the Worker Routes in the company Cloudflare
@@ -517,7 +518,7 @@ Expected proof endpoints:
 
 ### 8. Rails Cleanup After Cutover
 
-Only after Cloudflare serves the intended staging domains and stakeholders
+Only after Cloudflare serves the intended staging hostname paths and stakeholders
 accept the proof command, remove or replace the portal-react-specific Rails S3
 proxy.
 
@@ -536,6 +537,6 @@ Direct, and legacy Portal still use it.
 ## Key Takeaway
 
 For the official migration, developers should deploy through GitHub Actions.
-SRE should own Cloudflare account access, API tokens, custom domains, protected
+SRE should own Cloudflare account access, API tokens, Worker Routes, protected
 production environments, and rollback policy. That gives the team deployability
 without handing every developer direct Cloudflare production access.

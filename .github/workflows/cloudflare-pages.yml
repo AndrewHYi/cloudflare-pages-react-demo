@@ -56,10 +56,12 @@ jobs:
         run: npm ci
 
       - name: Build
-        run: npm run build
+        run: npm run build:path-route
 
       - name: Verify local proof
-        run: npm run test:proof
+        run: |
+          npm run test:proof
+          npm run verify:path-routing
 
       - name: Check Cloudflare configuration
         run: |
@@ -132,10 +134,12 @@ jobs:
         run: npm ci
 
       - name: Build
-        run: npm run build
+        run: npm run build:path-route
 
       - name: Verify local proof
-        run: npm run test:proof
+        run: |
+          npm run test:proof
+          npm run verify:path-routing
 
       - name: Check Cloudflare configuration
         run: |
@@ -201,10 +205,12 @@ jobs:
         run: npm ci
 
       - name: Build
-        run: npm run build
+        run: npm run build:path-route
 
       - name: Verify local proof
-        run: npm run test:proof
+        run: |
+          npm run test:proof
+          npm run verify:path-routing
 
       - name: Check Cloudflare configuration
         run: |

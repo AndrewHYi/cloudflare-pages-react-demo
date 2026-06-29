@@ -22,15 +22,19 @@ assertConfiguredWorkerRoute("https://test.seeclickfix.com/assets/index.js", fals
 
 await assertRoute(
   "https://test.seeclickfix.com/web_portal_v2/4cEcdxWkFJ64K5QdKu99xP93?version=abc123",
-  "https://portal-react-staging.pages.dev/web_portal_v2/4cEcdxWkFJ64K5QdKu99xP93?version=abc123",
+  "https://portal-react-staging.pages.dev/?version=abc123",
 );
 await assertRoute(
   "https://test.seeclickfix.com/web_portal_v2",
-  "https://portal-react-staging.pages.dev/web_portal_v2",
+  "https://portal-react-staging.pages.dev/",
 );
 await assertRoute(
   "https://test.seeclickfix.com/web_portal_v2/",
-  "https://portal-react-staging.pages.dev/web_portal_v2/",
+  "https://portal-react-staging.pages.dev/",
+);
+await assertRoute(
+  "https://test.seeclickfix.com/web_portal_v2/version.json",
+  "https://portal-react-staging.pages.dev/web_portal_v2/version.json",
 );
 await assertRoute(
   "https://test.seeclickfix.com/web_portal_v2/assets/index.js",
@@ -61,6 +65,10 @@ assert(
   pagesPathnameForPortalPath("/web_portal_v2/assets/index.js") === "/assets/index.js",
   "Expected Worker to rewrite /web_portal_v2/assets/* to Pages /assets/*",
 );
+assert(
+  pagesPathnameForPortalPath("/web_portal_v2/4cEcdxWkFJ64K5QdKu99xP93") === "/",
+  "Expected Worker to rewrite portal app shell paths to Pages /",
+);
 
 const indexHtml = readFileSync("dist/index.html", "utf8");
 assert(
@@ -74,7 +82,7 @@ assert(
 );
 assertReferencedAssetsExistAfterWorkerRewrite(indexHtml);
 
-console.log("Path routing proof OK: exact /web_portal_v2 routes and /web_portal_v2/* child routes use Pages, assets are path-scoped, and asset requests rewrite to existing Pages files.");
+console.log("Path routing proof OK: exact /web_portal_v2 routes and /web_portal_v2/* child routes use Pages, app shell paths rewrite to Pages /, and path-scoped assets rewrite to existing Pages files.");
 
 async function assertRoute(source, expectedTarget) {
   const request = new Request(source);
