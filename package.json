@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "node scripts/build-with-version.mjs",
+    "build:path-route": "VITE_BASE_PATH=/web_portal_v2/ node scripts/build-with-version.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "test:proof": "node scripts/verify-dist.mjs",
+    "verify:path-routing": "node scripts/verify-path-routing.mjs",
     "verify:deployment": "node scripts/verify-deployment.mjs"
   },
   "dependencies": {

@@ -264,6 +264,21 @@ npm run verify:deployment -- \
 Cloudflare Pages subdomain can return a TLS handshake failure while Cloudflare
 finishes activating the host certificate.
 
+Verify the same-host `/web_portal_v2` routing model:
+
+```sh
+npm run build:path-route
+npm run verify:path-routing
+```
+
+This proof checks these concrete requirements:
+
+- only `/web_portal_v2` and `/web_portal_v2/*` route to Pages;
+- path-routed builds emit browser-facing asset URLs under
+  `/web_portal_v2/assets/*`;
+- the Worker routing code rewrites those asset requests to existing Pages files under
+  `/assets/*`.
+
 ## Personal Cloudflare Setup
 
 This is the setup used for the MVP.
@@ -419,28 +434,63 @@ Production must not be available through manual workflow dispatch. In PR 40 it
 only runs from a push to protected `main` and then waits on the protected
 `production` environment.
 
-### 6. Configure Domains
+### 6. Configure Routing
 
-Non-production options:
+Do not map these existing backend hostnames directly to Pages:
+
+- `test.seeclickfix.com`
+- `int.seeclickfix.com`
+- `seeclickfix.com`
+
+Those hostnames already serve the Rails/backend app. Cloudflare must preserve
+the current path shape:
+
+```text
+/web_portal_v2/<portal-token-or-client-route>
+```
+
+Non-production:
 
 - Use Cloudflare Pages branch aliases first:
   - `https://staging.<project>.pages.dev`
   - `https://pr-<number>.<project>.pages.dev`
-- Then map official domains:
-  - `test.seeclickfix.com`
-  - `int.seeclickfix.com`
+- For same-host TEST, configure these Cloudflare Worker Routes:
+  - `test.seeclickfix.com/web_portal_v2`
+  - `test.seeclickfix.com/web_portal_v2/*`
+- For same-host INT, configure these Cloudflare Worker Routes:
+  - `int.seeclickfix.com/web_portal_v2`
+  - `int.seeclickfix.com/web_portal_v2/*`
+- Leave all other paths on the backend host.
+- If first-party PR preview hostnames are required, use a frontend-only
+  namespace such as `*.portal-react-preview.test.seeclickfix.com`.
 
 Production:
 
-- Only map `seeclickfix.com` after the protected production workflow,
+- For same-host production, configure these Cloudflare Worker Routes:
+  - `seeclickfix.com/web_portal_v2`
+  - `seeclickfix.com/web_portal_v2/*`
+- Leave all other `seeclickfix.com` paths on the backend host.
+- Do this only after the protected production workflow, asset-path behavior,
   rollback process, and SRE ownership are verified.
 
-If `test.seeclickfix.com/web_portal_v2` must stay on the exact same host and
-path, SRE likely needs either:
+Verified same-host Worker Route requirements:
 
-- a Cloudflare Worker route that proxies `/web_portal_v2*` to the Pages
-  deployment, or
-- Cloudflare zone/routing changes that let Pages own that path safely.
+- Use the exact route plus slash-delimited wildcard shown above. Do not use
+  `test.seeclickfix.com/web_portal_v2*` as the only route; Cloudflare route
+  docs say a trailing `*` matches suffixes, which would also catch
+  `/web_portal_v2_test` at the Worker trigger layer.
+- Worker routing code must match `/web_portal_v2` and `/web_portal_v2/*`.
+- It must not match `/web_portal_v2_test`, `/api/*`, `/scf/*`, `/assets/*`, or
+  `/`.
+- The Vite build must use `VITE_BASE_PATH=/web_portal_v2/` or equivalent so
+  scripts and styles load from `/web_portal_v2/assets/*`.
+- Because Vite still writes files under `dist/assets/*`, the Worker routing code must
+  rewrite `/web_portal_v2/assets/*` to the Pages origin `/assets/*`, or the
+  build must copy assets under `dist/web_portal_v2/assets/*`.
+- This repo verifies the rewrite behavior with `npm run verify:path-routing`.
+- This is local proof of build output and Worker routing logic. Live same-host
+  proof requires SRE to install the Worker Routes in the company Cloudflare
+  zones and then verify the real hostnames.
 
 ### 7. Run Official Staging Proof
 
