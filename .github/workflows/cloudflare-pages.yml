@@ -1,0 +1,216 @@
+name: Cloudflare Pages
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      branch_alias:
+        description: Cloudflare Pages branch alias for staging.
+        required: false
+        default: int
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    name: Preview deploy
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT || secrets.CLOUDFLARE_PAGES_PROJECT }}
+      DEPLOY_BRANCH: pr-${{ github.event.pull_request.number }}
+      DEPLOY_COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+      DEPLOY_ENVIRONMENT: preview
+      VERIFY_SHA: ${{ github.event.pull_request.head.sha }}
+
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify local proof
+        run: npm run test:proof
+
+      - name: Check Cloudflare configuration
+        run: |
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_PAGES_PROJECT"
+
+      - name: Deploy to Cloudflare Pages
+        id: deploy
+        run: |
+          set -euo pipefail
+          deploy_log="$(mktemp)"
+          npx wrangler pages deploy dist --project-name "$CLOUDFLARE_PAGES_PROJECT" --branch "$DEPLOY_BRANCH" --commit-hash "$DEPLOY_COMMIT_SHA" | tee "$deploy_log"
+          deployment_url="$(grep -Eo 'https://[^[:space:]]+\.pages\.dev[^[:space:]]*' "$deploy_log" | tail -n 1 || true)"
+          if [ -z "$deployment_url" ]; then
+            echo "Wrangler output did not include a Cloudflare Pages deployment URL." >&2
+            exit 1
+          fi
+          echo "url=$deployment_url" >> "$GITHUB_OUTPUT"
+
+      - name: Verify deployment proof
+        run: npm run verify:deployment -- "${{ steps.deploy.outputs.url }}" "$VERIFY_SHA"
+
+      - name: Write deploy summary
+        run: |
+          {
+            echo "### Cloudflare Pages preview"
+            echo
+            echo "- URL: ${{ steps.deploy.outputs.url }}"
+            echo "- SHA: $VERIFY_SHA"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  staging:
+    name: Staging deploy
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    environment: staging
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT || secrets.CLOUDFLARE_PAGES_PROJECT }}
+      DEPLOY_BRANCH: ${{ inputs.branch_alias || 'int' }}
+      DEPLOY_COMMIT_SHA: ${{ github.sha }}
+      DEPLOY_ENVIRONMENT: staging
+      VERIFY_SHA: ${{ github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify local proof
+        run: npm run test:proof
+
+      - name: Check Cloudflare configuration
+        run: |
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_PAGES_PROJECT"
+
+      - name: Deploy to Cloudflare Pages
+        id: deploy
+        run: |
+          set -euo pipefail
+          deploy_log="$(mktemp)"
+          npx wrangler pages deploy dist --project-name "$CLOUDFLARE_PAGES_PROJECT" --branch "$DEPLOY_BRANCH" --commit-hash "$DEPLOY_COMMIT_SHA" | tee "$deploy_log"
+          deployment_url="$(grep -Eo 'https://[^[:space:]]+\.pages\.dev[^[:space:]]*' "$deploy_log" | tail -n 1 || true)"
+          if [ -z "$deployment_url" ]; then
+            echo "Wrangler output did not include a Cloudflare Pages deployment URL." >&2
+            exit 1
+          fi
+          echo "url=$deployment_url" >> "$GITHUB_OUTPUT"
+
+      - name: Verify deployment proof
+        run: npm run verify:deployment -- "${{ steps.deploy.outputs.url }}" "$VERIFY_SHA"
+
+      - name: Write deploy summary
+        run: |
+          {
+            echo "### Cloudflare Pages staging"
+            echo
+            echo "- URL: ${{ steps.deploy.outputs.url }}"
+            echo "- SHA: $VERIFY_SHA"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  production:
+    name: Production deploy
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      vars.CLOUDFLARE_PAGES_PROJECT != ''
+    environment: production
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT || secrets.CLOUDFLARE_PAGES_PROJECT }}
+      DEPLOY_BRANCH: main
+      DEPLOY_COMMIT_SHA: ${{ github.sha }}
+      DEPLOY_ENVIRONMENT: production
+      VERIFY_SHA: ${{ github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify local proof
+        run: npm run test:proof
+
+      - name: Check Cloudflare configuration
+        run: |
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_PAGES_PROJECT"
+
+      - name: Deploy to Cloudflare Pages
+        id: deploy
+        run: |
+          set -euo pipefail
+          deploy_log="$(mktemp)"
+          npx wrangler pages deploy dist --project-name "$CLOUDFLARE_PAGES_PROJECT" --branch "$DEPLOY_BRANCH" --commit-hash "$DEPLOY_COMMIT_SHA" | tee "$deploy_log"
+          deployment_url="$(grep -Eo 'https://[^[:space:]]+\.pages\.dev[^[:space:]]*' "$deploy_log" | tail -n 1 || true)"
+          if [ -z "$deployment_url" ]; then
+            echo "Wrangler output did not include a Cloudflare Pages deployment URL." >&2
+            exit 1
+          fi
+          echo "url=$deployment_url" >> "$GITHUB_OUTPUT"
+
+      - name: Verify deployment proof
+        run: npm run verify:deployment -- "${{ steps.deploy.outputs.url }}" "$VERIFY_SHA"
+
+      - name: Write deploy summary
+        run: |
+          {
+            echo "### Cloudflare Pages production"
+            echo
+            echo "- URL: ${{ steps.deploy.outputs.url }}"
+            echo "- SHA: $VERIFY_SHA"
+          } >> "$GITHUB_STEP_SUMMARY"
