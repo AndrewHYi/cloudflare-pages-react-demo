@@ -134,11 +134,23 @@ jobs:
           echo "project_name=${PROJECT_NAME}" >> "${GITHUB_OUTPUT}"
 
       - name: Write GitHub repo variables
+        id: variables
         run: |
-          set -euo pipefail
+          set +e
 
           gh variable set CLOUDFLARE_ACCOUNT_ID --repo "${GITHUB_REPOSITORY}" --body "${{ steps.account.outputs.account_id }}"
+          account_status="$?"
           gh variable set CLOUDFLARE_PAGES_PROJECT --repo "${GITHUB_REPOSITORY}" --body "${{ steps.project.outputs.project_name }}"
+          project_status="$?"
+
+          if [ "${account_status}" -eq 0 ] && [ "${project_status}" -eq 0 ]; then
+            echo "written=true" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          echo "written=false" >> "${GITHUB_OUTPUT}"
+          echo "::warning title=Variables not written::The default GitHub Actions token could not write repo variables. Run the commands from the job summary locally."
+          exit 0
 
       - name: Summary
         run: |
@@ -148,5 +160,17 @@ jobs:
             echo "- Account: ${{ steps.account.outputs.account_name }} (${{ steps.account.outputs.account_id }})"
             echo "- Project: ${{ steps.project.outputs.project_name }}"
             echo "- Created project: ${{ steps.project.outputs.created }}"
-            echo "- Variables written: CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_PAGES_PROJECT"
+            echo "- Variables written by workflow: ${{ steps.variables.outputs.written }}"
+            echo
+            echo "If variables were not written by the workflow, run:"
+            echo
+            echo '```bash'
+            echo 'gh variable set CLOUDFLARE_ACCOUNT_ID \'
+            echo '  --repo AndrewHYi/cloudflare-pages-react-demo \'
+            echo '  --body "${{ steps.account.outputs.account_id }}"'
+            echo
+            echo 'gh variable set CLOUDFLARE_PAGES_PROJECT \'
+            echo '  --repo AndrewHYi/cloudflare-pages-react-demo \'
+            echo '  --body "${{ steps.project.outputs.project_name }}"'
+            echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
