@@ -53,6 +53,8 @@ npm run verify:deployment -- \
   - `/version.json`
   - `/web_portal_v2/version.json`
 - A stable staging branch alias can be deployed manually.
+- A developer can manually open a PR-like environment from a draft PR branch
+  without waiting for the automatic PR preview trigger.
 - A production-style deploy can be restricted to a `main` push.
 - Developers do not need Cloudflare dashboard access to deploy through GitHub
   Actions.
@@ -128,7 +130,7 @@ gh variable set CLOUDFLARE_PAGES_PROJECT \
 Triggers:
 
 - `pull_request`: deploys a PR preview for same-repo PRs.
-- `workflow_dispatch`: deploys staging.
+- `workflow_dispatch`: deploys staging or a manual PR environment.
 - `push` to `main`: deploys production-style demo.
 
 Manual staging deploy:
@@ -137,10 +139,102 @@ Manual staging deploy:
 gh workflow run cloudflare-pages.yml \
   --repo AndrewHYi/cloudflare-pages-react-demo \
   --ref main \
+  -f target=staging \
   -f branch_alias=int
 ```
 
+Manual PR environment deploy:
+
+```sh
+gh workflow run cloudflare-pages.yml \
+  --repo AndrewHYi/cloudflare-pages-react-demo \
+  --ref <draft-pr-branch> \
+  -f target=pr-preview \
+  -f branch_alias=manual-pr-<pr-number>-<name>
+```
+
+Example:
+
+```sh
+gh workflow run cloudflare-pages.yml \
+  --repo AndrewHYi/cloudflare-pages-react-demo \
+  --ref main \
+  -f target=pr-preview \
+  -f branch_alias=manual-pr-readme-proof
+```
+
+Use `manual-pr-<number>-<name>` for manually opened environments. Avoid
+`pr-<number>` unless you intentionally want to overwrite the automatic PR
+preview alias for that PR number.
+
 Production-style demo deploy happens on push to `main`.
+
+## Manual PR Environment Runbook
+
+This is the target flow for individual developers and agents:
+
+1. Developer opens a draft PR.
+2. Developer asks an agent: "open a PR environment for this draft PR."
+3. Agent reads this README, gets the PR branch name and PR number, and runs:
+
+   ```sh
+   gh workflow run cloudflare-pages.yml \
+     --repo AndrewHYi/cloudflare-pages-react-demo \
+     --ref <draft-pr-branch> \
+     -f target=pr-preview \
+     -f branch_alias=manual-pr-<pr-number>-<developer-or-topic>
+   ```
+
+4. Agent waits for the workflow run to finish.
+5. Agent reads the workflow summary or logs for the Pages URL.
+6. Agent verifies the environment:
+
+   ```sh
+   npm run verify:deployment -- \
+     https://manual-pr-<pr-number>-<developer-or-topic>.portal-react-cloudflare-demo.pages.dev \
+     <workflow-head-sha>
+   ```
+
+7. Agent comments or reports the URL and verified SHA.
+
+The manual PR environment is independent from the automatic PR preview. The
+automatic PR preview uses `pr-<number>`. The manual environment should use a
+different alias, such as `manual-pr-40-andrew`.
+
+## How Versions Work In Cloudflare Pages
+
+The old portal deploy used Rails and S3 version selection:
+
+```text
+/web_portal_v2?version=<sha>
+```
+
+Rails translated that into an S3 object lookup like:
+
+```text
+<portal_react_s3_prefix>/index.html:<sha>
+```
+
+Cloudflare Pages does not use a `?version=<sha>` query parameter. It has two
+version concepts:
+
+- Immutable deployment URL: every upload gets a URL like
+  `https://22000ab1.portal-react-cloudflare-demo.pages.dev`.
+- Branch alias URL: `--branch int` or `--branch manual-pr-40-andrew` creates a
+  stable URL that points to the latest deployment for that alias, such as
+  `https://int.portal-react-cloudflare-demo.pages.dev`.
+
+Re-deploying the same branch alias moves that alias to the newest upload. The
+immutable deployment URL is the exact-version proof URL. The branch alias is the
+stable QA/review URL.
+
+This app also writes its own version proof into the artifact:
+
+- `meta[name="portal-react:commit-sha"]` in `index.html`
+- `/version.json`
+- `/web_portal_v2/version.json`
+
+`npm run verify:deployment -- <url> <sha>` checks those proof surfaces.
 
 ## Local Verification
 

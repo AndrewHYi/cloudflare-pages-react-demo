@@ -7,8 +7,16 @@ on:
       - main
   workflow_dispatch:
     inputs:
+      target:
+        description: Non-production deploy target.
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - pr-preview
       branch_alias:
-        description: Cloudflare Pages branch alias for staging.
+        description: Cloudflare Pages branch alias. Use int for staging or manual-pr-<number>-<name> for manual PR environments.
         required: false
         default: int
         type: string
@@ -84,8 +92,8 @@ jobs:
             echo "- SHA: $VERIFY_SHA"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  staging:
-    name: Staging deploy
+  manual_nonproduction:
+    name: Manual non-production deploy
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch'
     environment: staging
@@ -95,10 +103,22 @@ jobs:
       CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT || secrets.CLOUDFLARE_PAGES_PROJECT }}
       DEPLOY_BRANCH: ${{ inputs.branch_alias || 'int' }}
       DEPLOY_COMMIT_SHA: ${{ github.sha }}
-      DEPLOY_ENVIRONMENT: staging
+      DEPLOY_ENVIRONMENT: ${{ inputs.target || 'staging' }}
       VERIFY_SHA: ${{ github.sha }}
 
     steps:
+      - name: Validate branch alias
+        run: |
+          if [ -z "${DEPLOY_BRANCH}" ]; then
+            echo "::error title=Missing branch_alias::Use int for staging or manual-pr-<number>-<name> for a manual PR environment."
+            exit 1
+          fi
+
+          if [ "${DEPLOY_BRANCH}" = "main" ] || [ "${DEPLOY_BRANCH}" = "production" ]; then
+            echo "::error title=Protected alias::Manual non-production deploys cannot use ${DEPLOY_BRANCH}."
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -142,10 +162,12 @@ jobs:
       - name: Write deploy summary
         run: |
           {
-            echo "### Cloudflare Pages staging"
+            echo "### Cloudflare Pages manual non-production deploy"
             echo
             echo "- URL: ${{ steps.deploy.outputs.url }}"
             echo "- SHA: $VERIFY_SHA"
+            echo "- Target: $DEPLOY_ENVIRONMENT"
+            echo "- Branch alias: $DEPLOY_BRANCH"
           } >> "$GITHUB_STEP_SUMMARY"
 
   production:
