@@ -1,0 +1,152 @@
+name: Cloudflare Pages Bootstrap
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_name:
+        description: Cloudflare Pages project name
+        required: true
+        default: portal-react-cloudflare-demo
+        type: string
+      account_id:
+        description: Optional Cloudflare account ID when the token can access more than one account
+        required: false
+        type: string
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  bootstrap:
+    name: Create project and set repo vars
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+      PROJECT_NAME: ${{ inputs.project_name }}
+      INPUT_ACCOUNT_ID: ${{ inputs.account_id }}
+
+    steps:
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CLOUDFLARE_API_TOKEN}" ]; then
+            echo "::error title=Missing CLOUDFLARE_API_TOKEN::Set the repo secret before running bootstrap."
+            exit 1
+          fi
+
+          if [ -z "${PROJECT_NAME}" ]; then
+            echo "::error title=Missing project_name::Provide a Cloudflare Pages project name."
+            exit 1
+          fi
+
+      - name: Resolve account
+        id: account
+        run: |
+          set -euo pipefail
+
+          if [ -n "${INPUT_ACCOUNT_ID}" ]; then
+            account_json="$(mktemp)"
+            status="$(curl -sS -o "${account_json}" -w "%{http_code}" \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              "https://api.cloudflare.com/client/v4/accounts/${INPUT_ACCOUNT_ID}")"
+
+            if [ "${status}" != "200" ]; then
+              echo "::error title=Cloudflare account lookup failed::HTTP ${status}"
+              jq "{success, errors, messages}" "${account_json}" || cat "${account_json}"
+              exit 1
+            fi
+
+            account_id="${INPUT_ACCOUNT_ID}"
+            account_name="$(jq -r ".result.name" "${account_json}")"
+          else
+            accounts_json="$(mktemp)"
+            status="$(curl -sS -o "${accounts_json}" -w "%{http_code}" \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              "https://api.cloudflare.com/client/v4/accounts")"
+
+            if [ "${status}" != "200" ]; then
+              echo "::error title=Cloudflare accounts request failed::HTTP ${status}"
+              jq "{success, errors, messages}" "${accounts_json}" || cat "${accounts_json}"
+              exit 1
+            fi
+
+            account_count="$(jq ".result | length" "${accounts_json}")"
+            if [ "${account_count}" -eq 0 ]; then
+              echo "::error title=No Cloudflare accounts::The token authenticated but returned no accounts."
+              exit 1
+            fi
+
+            if [ "${account_count}" -gt 1 ]; then
+              echo "::error title=Multiple Cloudflare accounts::Rerun with the account_id input set to one of these accounts."
+              jq -r ".result[] | \"- \\(.name): \\(.id)\"" "${accounts_json}"
+              exit 1
+            fi
+
+            account_id="$(jq -r ".result[0].id" "${accounts_json}")"
+            account_name="$(jq -r ".result[0].name" "${accounts_json}")"
+          fi
+
+          echo "account_id=${account_id}" >> "${GITHUB_OUTPUT}"
+          echo "account_name=${account_name}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create or verify Pages project
+        id: project
+        run: |
+          set -euo pipefail
+
+          account_id="${{ steps.account.outputs.account_id }}"
+          project_json="$(mktemp)"
+          status="$(curl -sS -o "${project_json}" -w "%{http_code}" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            "https://api.cloudflare.com/client/v4/accounts/${account_id}/pages/projects/${PROJECT_NAME}")"
+
+          if [ "${status}" = "404" ]; then
+            create_json="$(mktemp)"
+            create_status="$(curl -sS -o "${create_json}" -w "%{http_code}" \
+              -X POST \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data "{\"name\":\"${PROJECT_NAME}\",\"production_branch\":\"main\"}" \
+              "https://api.cloudflare.com/client/v4/accounts/${account_id}/pages/projects")"
+
+            if [ "${create_status}" != "200" ]; then
+              echo "::error title=Cloudflare Pages create failed::HTTP ${create_status}"
+              jq "{success, errors, messages}" "${create_json}" || cat "${create_json}"
+              exit 1
+            fi
+
+            echo "created=true" >> "${GITHUB_OUTPUT}"
+          elif [ "${status}" = "200" ]; then
+            echo "created=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "::error title=Cloudflare Pages lookup failed::HTTP ${status}"
+            jq "{success, errors, messages}" "${project_json}" || cat "${project_json}"
+            exit 1
+          fi
+
+          echo "project_name=${PROJECT_NAME}" >> "${GITHUB_OUTPUT}"
+
+      - name: Write GitHub repo variables
+        run: |
+          set -euo pipefail
+
+          gh variable set CLOUDFLARE_ACCOUNT_ID --repo "${GITHUB_REPOSITORY}" --body "${{ steps.account.outputs.account_id }}"
+          gh variable set CLOUDFLARE_PAGES_PROJECT --repo "${GITHUB_REPOSITORY}" --body "${{ steps.project.outputs.project_name }}"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Cloudflare Pages bootstrap"
+            echo
+            echo "- Account: ${{ steps.account.outputs.account_name }} (${{ steps.account.outputs.account_id }})"
+            echo "- Project: ${{ steps.project.outputs.project_name }}"
+            echo "- Created project: ${{ steps.project.outputs.created }}"
+            echo "- Variables written: CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_PAGES_PROJECT"
+          } >> "${GITHUB_STEP_SUMMARY}"
