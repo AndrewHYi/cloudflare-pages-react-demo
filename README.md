@@ -211,7 +211,7 @@ different alias, such as `manual-pr-40-andrew`.
 The old portal deploy used Rails and S3 version selection:
 
 ```text
-/web_portal_v2?version=<sha>
+/web_portal_v2/<portal-token-or-client-route>?version=<sha>
 ```
 
 Rails translated that into an S3 object lookup like:
@@ -290,8 +290,9 @@ This proof checks these concrete requirements:
   `/web_portal_v2/assets/*`;
 - portal app shell paths such as `/web_portal_v2/<portal-token>` fetch the
   Pages root HTML while the browser URL remains unchanged;
-- `?version=<sha>` resolves to the matching internal Pages deployment target
-  when a version mapping exists;
+- after the `/web_portal_v2/...` Worker Route has matched, `?version=<sha>`
+  resolves to the matching internal Pages deployment target when a version
+  mapping exists;
 - the Worker routing code rewrites those asset requests to existing Pages files under
   `/assets/*`.
 
