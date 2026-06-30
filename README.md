@@ -21,17 +21,17 @@ Configured GitHub Actions values:
 - Secret: `CLOUDFLARE_API_TOKEN`
 - Variables: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PAGES_PROJECT`
 
-Live proof:
+Private demo proof. These are not official SeeClickFix environment URLs:
 
 - Staging workflow run:
   `https://github.com/AndrewHYi/cloudflare-pages-react-demo/actions/runs/28393647805`
-- Staging alias:
+- Internal staging alias:
   `https://int.portal-react-cloudflare-demo.pages.dev`
 - Staging verified SHA:
   `4d99cac343037c94ca318cd83eb700fbb2ce586b`
 - Production-style workflow run:
   `https://github.com/AndrewHYi/cloudflare-pages-react-demo/actions/runs/28393883268`
-- Production proof URL:
+- Internal production proof URL:
   `https://13fba103.portal-react-cloudflare-demo.pages.dev`
 - Production verified SHA:
   `173d111b4398ce952149332779d2247d644962c6`
@@ -186,16 +186,21 @@ This is the target flow for individual developers and agents:
    ```
 
 4. Agent waits for the workflow run to finish.
-5. Agent reads the workflow summary or logs for the Pages URL.
-6. Agent verifies the environment:
+5. Agent reads the workflow summary or logs for the internal Pages proof URL.
+6. Agent verifies the internal artifact:
 
    ```sh
    npm run verify:deployment -- \
-     https://manual-pr-<pr-number>-<developer-or-topic>.portal-react-cloudflare-demo.pages.dev \
+     <internal-cloudflare-pages-url> \
      <workflow-head-sha>
    ```
 
-7. Agent comments or reports the URL and verified SHA.
+7. After TEST Worker Routes and version mapping exist, agent reports the
+   user-facing PR/preview URL and verified SHA:
+
+   ```text
+   https://test.seeclickfix.com/web_portal_v2/<portal-token-or-client-route>?version=<workflow-head-sha>
+   ```
 
 The manual PR environment is independent from the automatic PR preview. The
 automatic PR preview uses `pr-<number>`. The manual environment should use a
@@ -215,18 +220,25 @@ Rails translated that into an S3 object lookup like:
 <portal_react_s3_prefix>/index.html:<sha>
 ```
 
-Cloudflare Pages does not use a `?version=<sha>` query parameter. It has two
-version concepts:
+Cloudflare Pages does not natively select deployments with a
+`?version=<sha>` query parameter. It has two artifact concepts:
 
 - Immutable deployment URL: every upload gets a URL like
-  `https://22000ab1.portal-react-cloudflare-demo.pages.dev`.
+  `<internal-cloudflare-deployment-url>`.
 - Branch alias URL: `--branch int` or `--branch manual-pr-40-andrew` creates a
-  stable URL that points to the latest deployment for that alias, such as
-  `https://int.portal-react-cloudflare-demo.pages.dev`.
+  stable internal target that points to the latest deployment for that alias.
 
 Re-deploying the same branch alias moves that alias to the newest upload. The
-immutable deployment URL is the exact-version proof URL. The branch alias is the
-stable QA/review URL.
+immutable deployment URL is the exact-version proof target. The public
+QA/test and PR/preview URLs stay on `test.seeclickfix.com`:
+
+```text
+QA/test active:      https://test.seeclickfix.com/web_portal_v2/<portal-token-or-client-route>
+PR/preview version: https://test.seeclickfix.com/web_portal_v2/<portal-token-or-client-route>?version=<pr-head-sha>
+```
+
+The Worker keeps the public `?version=<sha>` contract and resolves that version
+to the correct internal Pages deployment target.
 
 This app also writes its own version proof into the artifact:
 
@@ -252,11 +264,11 @@ Run locally:
 npm run dev
 ```
 
-Verify any deployed URL:
+Verify any internal deployed artifact URL:
 
 ```sh
 npm run verify:deployment -- \
-  https://<deployment-or-alias>.pages.dev \
+  <internal-cloudflare-pages-url> \
   <expected-commit-sha>
 ```
 
@@ -278,6 +290,8 @@ This proof checks these concrete requirements:
   `/web_portal_v2/assets/*`;
 - portal app shell paths such as `/web_portal_v2/<portal-token>` fetch the
   Pages root HTML while the browser URL remains unchanged;
+- `?version=<sha>` resolves to the matching internal Pages deployment target
+  when a version mapping exists;
 - the Worker routing code rewrites those asset requests to existing Pages files under
   `/assets/*`.
 
@@ -321,11 +335,12 @@ This is the setup used for the MVP.
      -f branch_alias=int
    ```
 
-6. Verify the alias URL against the run SHA.
+6. Verify the internal alias URL from the workflow log/summary against the run
+   SHA.
 
    ```sh
    npm run verify:deployment -- \
-     https://int.portal-react-cloudflare-demo.pages.dev \
+     <internal-cloudflare-pages-url> \
      "<workflow-head-sha>"
    ```
 
@@ -454,9 +469,10 @@ the current path shape:
 
 Non-production:
 
-- Use Cloudflare Pages branch aliases as the artifact targets behind the Worker:
-  - `https://staging.<project>.pages.dev`
-  - `https://pr-<number>.<project>.pages.dev`
+- Use Cloudflare Pages branch aliases as internal artifact targets behind the
+  Worker:
+  - `staging`
+  - `pr-<number>`
 - For same-host TEST, configure these Cloudflare Worker Routes:
   - `test.seeclickfix.com/web_portal_v2`
   - `test.seeclickfix.com/web_portal_v2/*`

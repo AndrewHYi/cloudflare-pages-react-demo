@@ -7,7 +7,7 @@ export default {
 export async function routePortalReactRequest(request, env, fetchImpl = fetch) {
   const sourceUrl = new URL(request.url);
   const targetOrigin = isPortalReactPath(sourceUrl.pathname)
-    ? requiredEnv(env, "PORTAL_REACT_PAGES_ORIGIN")
+    ? pagesOriginForPortalRequest(sourceUrl, env)
     : requiredEnv(env, "BACKEND_ORIGIN");
   const targetPathname = isPortalReactPath(sourceUrl.pathname)
     ? pagesPathnameForPortalPath(sourceUrl.pathname)
@@ -19,6 +19,17 @@ export async function routePortalReactRequest(request, env, fetchImpl = fetch) {
 
 export function isPortalReactPath(pathname) {
   return pathname === "/web_portal_v2" || pathname.startsWith("/web_portal_v2/");
+}
+
+export function pagesOriginForPortalRequest(url, env) {
+  const version = url.searchParams.get("version");
+  const versionedOrigins = parseVersionedOrigins(env?.PORTAL_REACT_PAGES_ORIGIN_BY_VERSION);
+
+  if (version && versionedOrigins[version]) {
+    return versionedOrigins[version];
+  }
+
+  return requiredEnv(env, "PORTAL_REACT_PAGES_ORIGIN");
 }
 
 export function pagesPathnameForPortalPath(pathname) {
@@ -43,4 +54,12 @@ function requiredEnv(env, key) {
     throw new Error(`Missing required Worker env var ${key}`);
   }
   return value;
+}
+
+function parseVersionedOrigins(rawValue) {
+  if (!rawValue) {
+    return {};
+  }
+
+  return JSON.parse(rawValue);
 }

@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
   isPortalReactPath,
+  pagesOriginForPortalRequest,
   pagesPathnameForPortalPath,
   routePortalReactRequest,
 } from "../workers/portal-react-path-router.mjs";
@@ -10,6 +11,9 @@ import {
 const env = {
   BACKEND_ORIGIN: "https://backend.example.test",
   PORTAL_REACT_PAGES_ORIGIN: "https://portal-react-staging.pages.dev",
+  PORTAL_REACT_PAGES_ORIGIN_BY_VERSION: JSON.stringify({
+    abc123: "https://portal-react-version-abc123.pages.dev",
+  }),
 };
 
 assertConfiguredWorkerRoute("https://test.seeclickfix.com/web_portal_v2", true);
@@ -22,7 +26,7 @@ assertConfiguredWorkerRoute("https://test.seeclickfix.com/assets/index.js", fals
 
 await assertRoute(
   "https://test.seeclickfix.com/web_portal_v2/4cEcdxWkFJ64K5QdKu99xP93?version=abc123",
-  "https://portal-react-staging.pages.dev/?version=abc123",
+  "https://portal-react-version-abc123.pages.dev/?version=abc123",
 );
 await assertRoute(
   "https://test.seeclickfix.com/web_portal_v2",
@@ -68,6 +72,11 @@ assert(
 assert(
   pagesPathnameForPortalPath("/web_portal_v2/4cEcdxWkFJ64K5QdKu99xP93") === "/",
   "Expected Worker to rewrite portal app shell paths to Pages /",
+);
+assert(
+  pagesOriginForPortalRequest(new URL("https://test.seeclickfix.com/web_portal_v2/example?version=abc123"), env) ===
+    "https://portal-react-version-abc123.pages.dev",
+  "Expected Worker to resolve ?version=abc123 to the matching Pages deployment target",
 );
 
 const indexHtml = readFileSync("dist/index.html", "utf8");
