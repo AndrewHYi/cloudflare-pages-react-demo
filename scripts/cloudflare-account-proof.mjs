@@ -6,11 +6,6 @@ const baseUrl = "https://api.cloudflare.com/client/v4";
 
 const checks = [];
 
-await check("api token is active", async () => {
-  const response = await cloudflare("/user/tokens/verify");
-  return `status=${response.result.status}`;
-});
-
 await check("pages project is accessible", async () => {
   const response = await cloudflare(
     `/accounts/${accountId}/pages/projects/${encodeURIComponent(pagesProject)}`,
@@ -23,7 +18,18 @@ await check("account zones are readable", async () => {
   const response = await cloudflare(`/zones?account.id=${accountId}&per_page=50`);
   const zones = response.result ?? [];
   const activeZones = zones.filter((zone) => zone.status === "active");
-  return `zones=${zones.length}; active=${activeZones.length}; route_ready=${activeZones.length > 0 ? "yes" : "no"}`;
+
+  if (activeZones.length === 0) {
+    return {
+      status: "blocked",
+      detail: `zones=${zones.length}; active=${activeZones.length}; route_ready=no`,
+    };
+  }
+
+  return {
+    status: "pass",
+    detail: `zones=${zones.length}; active=${activeZones.length}; route_ready=yes`,
+  };
 });
 
 await check("workers scripts are readable", async () => {
@@ -37,16 +43,20 @@ for (const checkResult of checks) {
   console.log(`- ${checkResult.name}: ${checkResult.status}${checkResult.detail ? ` (${checkResult.detail})` : ""}`);
 }
 
-if (checks.some((checkResult) => checkResult.status === "fail")) {
+if (checks.some((checkResult) => checkResult.status !== "pass")) {
   process.exitCode = 1;
 }
 
 async function check(name, callback) {
   try {
-    const detail = await callback();
-    checks.push({ name, status: "pass", detail });
+    const result = await callback();
+    if (typeof result === "object") {
+      checks.push({ name, status: result.status, detail: result.detail });
+    } else {
+      checks.push({ name, status: "pass", detail: result });
+    }
   } catch (error) {
-    checks.push({ name, status: "fail", detail: error.message });
+    checks.push({ name, status: "blocked", detail: error.message });
   }
 }
 

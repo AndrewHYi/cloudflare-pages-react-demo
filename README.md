@@ -509,6 +509,11 @@ Verified same-host Worker Route requirements:
 - This is local proof of build output and Worker routing logic. Live same-host
   proof requires SRE to install the Worker Routes in the company Cloudflare
   zones and then verify the real hostnames.
+- The `Cloudflare account proof` workflow checks whether the personal account
+  can support live Worker Route proof. Run `28448604542` showed the Pages project
+  is accessible, but the account has zero active zones and the existing token
+  cannot read Workers scripts. Live Worker Route proof needs an active zone plus
+  a token with Workers access.
 
 ### 7. Run Official Staging Proof
 
